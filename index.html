@@ -175,7 +175,7 @@
     <section class="panel">
       <div class="phead">
         <div class="ptitle">分线路客流对比 <span class="tag">可多选</span></div>
-        <div class="hint">点击下方线路标签切换显示</div>
+        <div class="hint">点击下方线路标签切换显示 · 悬停查看当日明细</div>
       </div>
       <div class="lines" id="lineChips"></div>
       <div class="chart" id="lineChart"></div>
@@ -441,6 +441,8 @@ function multiLineChart(el, rows, series, opts){
   const m = {t:14, r:14, b:26, l:42};
   const iw = W-m.l-m.r, ih = H-m.t-m.b;
   if (!rows.length || !series.length){ el.innerHTML='<div class="empty">请选择至少一条线路</div>'; return; }
+  // rows 可能是按周聚合的展示序列；detail 始终是逐日明细，供悬浮查询使用
+  const detail = (opts.detail && opts.detail.length) ? opts.detail : rows;
   let allv = [];
   rows.forEach(r=> series.forEach(s=>{ if(r.l[s]!=null) allv.push(r.l[s]); }));
   const {lo,hi,ticks} = niceTicks(Math.min(...allv)*0.9, Math.max(...allv)*1.05, 4);
@@ -487,19 +489,22 @@ function multiLineChart(el, rows, series, opts){
   hit.addEventListener('mousemove', ev=>{
     const rect = svg.getBoundingClientRect();
     const px = (ev.clientX-rect.left)/scaleX();
-    let i = Math.round((px-m.l)/(iw||1)*(rows.length-1));
-    i = Math.max(0, Math.min(rows.length-1, i));
-    const r = rows[i];
-    const evt = eventNear(r.d, !!r.n);
+    const frac = Math.max(0, Math.min(1, (px-m.l)/(iw||1)));
+    // 悬浮始终定位到「日」：即使折线按周聚合展示，也只显示当日明细
+    let di = Math.round(frac*(detail.length-1));
+    di = Math.max(0, Math.min(detail.length-1, di));
+    const r = detail[di];
+    const xd = m.l + (detail.length>1 ? di/(detail.length-1) : 0.5)*iw;
+    const evt = eventAt(r.d);
     focus.setAttribute('opacity','1');
-    focus.innerHTML = `<line x1="${x(i)}" x2="${x(i)}" y1="${m.t}" y2="${m.t+ih}" stroke="#98a2b3" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>`;
+    focus.innerHTML = `<line x1="${xd}" x2="${xd}" y1="${m.t}" y2="${m.t+ih}" stroke="#98a2b3" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>`;
     const list = series.map(s=>{
       const stopped = r.l[s]==null && evt && evt.lines.includes(s);
       return `<div class="r"><span style="color:${lineColor(s)}">${s}</span><b${stopped?' style="color:#ffd08a"':''}>${r.l[s]==null?(stopped?'停运':'—'):fmt1(r.l[s])}</b></div>`;
     }).join('');
-    tip.innerHTML = `<div class="t">${r.d} ${r.n?'起的一周':WD[dayOf(r.d).getDay()]}</div>${list}<div class="r" style="border-top:1px solid #3a4050;margin-top:5px;padding-top:4px"><span>线网合计</span><b>${fmt1(r.t)}</b></div>${eventTipHtml(evt)}`;
+    tip.innerHTML = `<div class="t">${r.d} ${WD[dayOf(r.d).getDay()]}</div>${list}<div class="r" style="border-top:1px solid #3a4050;margin-top:5px;padding-top:4px"><span>线网合计</span><b>${fmt1(r.t)}</b></div>${eventTipHtml(evt)}`;
     tip.classList.add('show');
-    tip.style.left = Math.min(Math.max(x(i)*scaleX(), 70), el.clientWidth-70) + 'px';
+    tip.style.left = Math.min(Math.max(xd*scaleX(), 70), el.clientWidth-70) + 'px';
     tip.style.top = '12px';
     tip.style.transform = 'translate(-50%,0)';
   });
@@ -732,7 +737,8 @@ function drawLineChart(){
   const raw = viewRows();
   const useWeek = state.range === 'all' && raw.length > 700;
   const rows = useWeek ? weeklyAgg(raw) : raw;
-  multiLineChart(document.getElementById('lineChart'), rows, [...state.selected], {height:280});
+  // detail 传逐日数据：折线可按周聚合显示，悬浮一律展示当日明细
+  multiLineChart(document.getElementById('lineChart'), rows, [...state.selected], {height:280, detail: raw});
 }
 
 /* ---------------- 停运事件说明 ---------------- */
